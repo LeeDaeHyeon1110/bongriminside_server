@@ -77,6 +77,13 @@ def register():
             (user_id, name, hashed_password, data.get('security_question'), data.get('security_answer'), salt)
         )
         db.commit()
+        
+        if selected_subject:
+            cur.execute('SELECT * FROM Subject WHERE subject_name = %s', (selected_subject,))
+            subject = cur.fetchone()
+            if not subject:
+                cur.execute('INSERT INTO Subject (subject_name, teacher) VALUES (%s, %s)', (selected_subject, data.get('선생님')))
+                db.commit()
 
         session_id = str(uuid.uuid4())
         cur.execute('INSERT INTO Session (user_id, session_id) VALUES (%s, %s)', (user_id, session_id))
