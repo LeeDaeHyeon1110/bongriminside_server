@@ -77,7 +77,7 @@ def register():
             (user_id, name, hashed_password, data.get('security_question'), data.get('security_answer'), salt)
         )
         db.commit()
-        
+
         if selected_subject:
             cur.execute('SELECT * FROM Subject WHERE subject_name = %s', (selected_subject,))
             subject = cur.fetchone()
@@ -155,7 +155,6 @@ def write_article():
     file_binary = request.files.get('file_binary')
     title = request.form.get('title')
     content = request.form.get('content')
-    font = request.form.get('font')
     category = request.form.get('category')
 
     if file_binary:
