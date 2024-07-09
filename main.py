@@ -117,38 +117,49 @@ def search_password():
 
     return jsonify({'message': '비밀번호 초기화를 위한 권한이 부여되었습니다.', 'reset_token': reset_token}), 200
 
-@app.route('/list', methods=['GET'])
 def get_post_list():
-    filter_type = request.args.get('filter')
-    sort_by = request.args.get('sort_by')
-    division = request.args.get('division')
-    search_query = request.args.get('search_query')
+    filter_type = request.args.get('filter')  # 공지, 질문, 자유
+    sort_by = request.args.get('sort_by')    # 조회수 순, 좋아요 순, 날짜 순
+    division = request.args.get('division')  # 전체/과목
+    search_query = request.args.get('search_query')  # 검색어
 
-    sql = "SELECT p.post_id, p.category, p.title, u.name AS author, p.date_time, COUNT(pl.id) AS likes_count " \
-          "FROM Posts p " \
-          "LEFT JOIN Users u ON p.user_id = u.user_id " \
-          "LEFT JOIN PostLike pl ON p.post_id = pl.post_id " \
-          "WHERE 1=1"
+    # Base SQL query
+    sql = """
+        SELECT p.post_id, p.category, p.title, u.name AS author, p.date_time,
+               COUNT(pl.id) AS likes_count, COUNT(v.view_id) AS view_count
+        FROM Posts p
+        LEFT JOIN Users u ON p.user_id = u.user_id
+        LEFT JOIN PostLike pl ON p.post_id = pl.post_id
+        LEFT JOIN PostViews v ON p.post_id = v.post_id
+        WHERE 1=1
+    """
 
+    # Applying filters based on query parameters
     if filter_type:
         sql += f" AND p.category = '{filter_type}'"
+
     if division == '과목':
         sql += " AND p.subject_id IS NOT NULL"
+
     if search_query:
         sql += f" AND (p.title LIKE '%{search_query}%' OR p.content LIKE '%{search_query}%')"
 
+    # Sorting logic based on sort_by parameter
     if sort_by == '조회수 순':
-        sql += " GROUP BY p.post_id ORDER BY COUNT(pl.id) DESC"
+        sql += " GROUP BY p.post_id ORDER BY view_count DESC"
     elif sort_by == '좋아요 순':
         sql += " GROUP BY p.post_id ORDER BY likes_count DESC"
     elif sort_by == '날짜 순':
         sql += " ORDER BY p.date_time DESC"
 
-    with db.cursor() as cur:
-        cur.execute(sql)
-        posts = cur.fetchall()
+    # Execute the constructed SQL query
+    with db.cursor() as cursor:
+        cursor.execute(sql)
+        posts = cursor.fetchall()
 
+    # Return the list of posts as JSON response
     return jsonify({'posts': posts}), 200
+
 
 @app.route('/article/write', methods=['POST'])
 def write_article():
@@ -183,26 +194,32 @@ def get_article():
     if not post_id:
         return jsonify({'error': 'Missing post_id parameter'}), 400
 
-    user_id = get_user_id_from_session()
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT p.category, p.title, p.content, u.name AS author, "
-            "s.subject_name AS selected_subject, p.date_time, "
-            "(SELECT COUNT(*) FROM post_like WHERE post_id = %s) AS like_count, "
-            "(SELECT COUNT(*) FROM post_like WHERE post_id = %s AND user_id = %s) AS liked "
-            "FROM Posts p "
-            "LEFT JOIN Users u ON p.user_id = u.user_id "
-            "LEFT JOIN User_Subject us ON p.user_id = us.user_id "
-            "LEFT JOIN Subject s ON us.subject_id = s.subject_id "
-            "WHERE p.post_id = %s",
-            (post_id, post_id, user_id, post_id)
-        )
-        result = cur.fetchone()
+    # SQL query to fetch article details with view count and like count
+    sql = """
+        SELECT p.category, p.title, p.content, u.name AS author,
+               s.subject_name AS selected_subject, p.date_time,
+               COUNT(v.view_id) AS view_count,
+               COUNT(pl.id) AS like_count
+        FROM Posts p
+        LEFT JOIN Users u ON p.user_id = u.user_id
+        LEFT JOIN User_Subject us ON p.user_id = us.user_id
+        LEFT JOIN Subject s ON us.subject_id = s.subject_id
+        LEFT JOIN PostViews v ON p.post_id = v.post_id
+        LEFT JOIN PostLike pl ON p.post_id = pl.post_id
+        WHERE p.post_id = %s
+        GROUP BY p.post_id
+    """
 
-    if not result:
+    # Execute the SQL query
+    with db.cursor() as cursor:
+        cursor.execute(sql, (post_id,))
+        article = cursor.fetchone()
+
+    if not article:
         return jsonify({'error': 'Post not found'}), 404
 
-    return jsonify(result), 200
+    # Return the article details as JSON response
+    return jsonify(article), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
