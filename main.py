@@ -316,4 +316,4 @@ def logout():
     return jsonify({'message': '로그아웃 완료'}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(port=3030)
