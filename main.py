@@ -1,11 +1,11 @@
 from flask import Flask, request, jsonify, session, Response
 from flask_session import Session
 import pymysql
+import os
+from dotenv import load_dotenv
+from datetime import datetime
 import uuid
 import hashlib
-import os
-from datetime import datetime
-from dotenv import load_dotenv
 import redis
 
 # Load environment variables from .env file
@@ -257,6 +257,59 @@ def get_profile():
 
     return jsonify({'user': user}), 200
 
+@app.route('/list', methods=['GET'])
+def get_post_list():
+    # Parse query parameters
+    filter_type = request.args.get('filter', default=None, type=str)
+    sort_by = request.args.get('sort', default='datetime', type=str)  # Default sort by datetime
+    subject_filter = request.args.get('subject', default='전체', type=str)  # Default filter to 전체
+    search_query = request.args.get('q', default=None, type=str)
+
+    # Base SQL query
+    sql = """
+        SELECT p.category, p.title, u.name AS author, p.datetime,
+            p.view_count, COUNT(pl.id) AS like_count
+        FROM Posts p
+        LEFT JOIN Users u ON p.user_id = u.user_id
+        LEFT JOIN PostLike pl ON p.post_id = pl.post_id
+    """
+
+    # Conditions to add to the query based on parameters
+    conditions = []
+    params = []
+
+    if filter_type in ['공지', '질문', '자유']:
+        conditions.append('p.category = %s')
+        params.append(filter_type)
+
+    if subject_filter != '전체':
+        conditions.append('s.subject_name = %s')
+        params.append(subject_filter)
+
+    if search_query:
+        conditions.append('(p.title LIKE %s OR p.content LIKE %s)')
+        params.extend(['%' + search_query + '%', '%' + search_query + '%'])
+
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+
+    # Group by post_id to avoid duplicates
+    sql += " GROUP BY p.post_id"
+
+    # Order by clause
+    if sort_by == '조회수 순':
+        sql += " ORDER BY p.view_count DESC"
+    elif sort_by == '좋아요 순':
+        sql += " ORDER BY like_count DESC"
+    elif sort_by == '날짜 순':
+        sql += " ORDER BY p.datetime DESC"
+
+    with db.cursor() as cursor:
+        cursor.execute(sql, params)
+        posts = cursor.fetchall()
+
+    return jsonify({'posts': posts}), 200
+
 @app.route('/logout', methods=["DELETE"])
 def logout():
     session.clear()
@@ -264,4 +317,3 @@ def logout():
 
 if __name__ == '__main__':
     app.run(debug=True)
-#이 코드가 정확해?
